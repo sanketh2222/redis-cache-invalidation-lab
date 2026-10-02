@@ -291,6 +291,37 @@ async function runChecks(baseUrl, redis) {
   }
 
   await cacheService.flushAllProductCacheKeys();
+  await jsonFetch(baseUrl, '/products');
+  const createName = `Eval Create ${Date.now()}`;
+  const postList = await jsonFetch(baseUrl, '/products', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: createName,
+      description: 'evaluator list invalidation after create',
+      price: 99.99,
+      category: 'eval-create',
+    }),
+  });
+  const listAfterPost = await jsonFetch(baseUrl, '/products');
+  const createdListItem = (listAfterPost.body.products || []).find(
+    (p) => p.id === postList.body?.id
+  );
+  if (
+    postList.res.status === 201 &&
+    postList.body &&
+    createdListItem &&
+    createdListItem.name === postList.body.name &&
+    createdListItem.price === postList.body.price
+  ) {
+    pass('List cache invalidation after POST');
+  } else {
+    fail(
+      'List cache invalidation after POST',
+      `Expected GET /products to include new id=${postList.body?.id} with name=${postList.body?.name}.\n       Actual: ${createdListItem ? `name=${createdListItem.name} price=${createdListItem.price}` : 'product missing from list'}`
+    );
+  }
+
+  await cacheService.flushAllProductCacheKeys();
   await jsonFetch(baseUrl, '/products/1');
   const ttl = await redis.ttl(keys.product(1));
   if (ttl > 0 && ttl <= 120) {

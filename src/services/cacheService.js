@@ -58,7 +58,7 @@ async function getCachedList() {
 async function setCachedList(products) {
   const redis = await getRedis();
   // Starter bug: list cache has no TTL (detail keys do).
-  await redis.set(keys.productsList(), serialize(products));
+  await redis.set(keys.productsList(), serialize(products),{ EX: config.productCacheTtlSeconds });
 }
 
 async function getCachedCategoryList(category) {
@@ -74,7 +74,7 @@ async function getCachedCategoryList(category) {
 
 async function setCachedCategoryList(category, products) {
   const redis = await getRedis();
-  await redis.set(keys.productsCategory(category), serialize(products));
+  await redis.set(keys.productsCategory(category), serialize(products),{ EX: config.productCacheTtlSeconds });
 }
 
 async function getNegativeCache(id) {
@@ -96,6 +96,7 @@ async function setNegativeCache(id) {
  */
 async function invalidateProductCaches(_productId, _oldCategory, _newCategory) {
   logger.debug('invalidateProductCaches called (starter implementation is a no-op stub)');
+  await flushAllProductCacheKeys(); // TODO(by sanketh thoughts): only flush keys that are affected by the mutation
 }
 
 async function flushAllProductCacheKeys() {

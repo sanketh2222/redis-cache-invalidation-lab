@@ -16,9 +16,16 @@ async function getProductById(id) {
     return cached.product;
   }
 
+  const result = await cacheService.getNegativeCache(numericId);
+  if (result) {
+    logger.debug('negative cache hit for product', { id: numericId });
+    return null;
+  }
+
   const fromDb = await productRepository.findById(numericId);
   if (!fromDb) {
-    // Negative caching not wired in starter code.
+    logger.debug('negative cache for product', { id: numericId });
+    await cacheService.setNegativeCache(numericId);
     return null;
   }
 
@@ -46,7 +53,7 @@ async function listProductsByCategory(category) {
 
 async function createProduct(payload) {
   const created = await productRepository.create(payload);
-  // List caches should be invalidated — not done in starter.
+  await cacheService.invalidateProductCaches(created.id, null, created.category);
   return created;
 }
 

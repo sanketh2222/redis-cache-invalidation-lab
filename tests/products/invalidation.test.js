@@ -59,6 +59,31 @@ describe('cache invalidation', () => {
     expect(item.price).toBe(updated.price);
   });
 
+  test('POST invalidates dependent list cache', async () => {
+    const listBefore = await (await fetch(`${baseUrl}/products`)).json();
+    const countBefore = listBefore.products.length;
+
+    const postRes = await fetch(`${baseUrl}/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: `List invalidation create ${Date.now()}`,
+        description: 'cache invalidation test',
+        price: 42.5,
+        category: 'invalidation-test',
+      }),
+    });
+    const created = await postRes.json();
+    expect(postRes.status).toBe(201);
+
+    const listAfter = await (await fetch(`${baseUrl}/products`)).json();
+    expect(listAfter.products.length).toBe(countBefore + 1);
+    const item = listAfter.products.find((p) => p.id === created.id);
+    expect(item).toBeDefined();
+    expect(item.name).toBe(created.name);
+    expect(item.price).toBe(created.price);
+  });
+
   test('DELETE removes stale detail cache', async () => {
     const created = await fetch(`${baseUrl}/products`, {
       method: 'POST',
