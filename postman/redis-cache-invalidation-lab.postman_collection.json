@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Redis Cache Invalidation Lab API",
-    "description": "Product catalog API with Redis caching (**redis-cache-invalidation-lab**).\n\n**Default:** `baseUrl` = http://localhost:3000\n\n**Dual instances:** change collection variable `baseUrl` to http://localhost:3001 (API 2) or http://localhost:8080 (Docker LB).\n\nEndpoints match README.md API table.",
+    "description": "Product catalog API with Redis caching (**redis-cache-invalidation-lab**).\n\n**Default:** `baseUrl` = http://localhost:3000\n\nStart this lab with `npm run dev` before sending requests. Port 3000 must be this API. If another app (for example a React dev server) is already on 3000, Postman will get that app's HTML (`Cannot GET /health`) instead of JSON.\n\n**Dual instances:** set `baseUrl` to http://localhost:3001 or http://localhost:8080.\n\n`GET /metrics` returns Prometheus text, not JSON. Other routes return JSON.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -32,7 +32,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/health",
-            "description": "Liveness check. Returns `{ ok, instance }` (INSTANCE_ID when running dual API)."
+            "description": "Liveness check. Returns `{ ok, instance }`."
           },
           "response": []
         },
@@ -42,7 +42,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/metrics",
-            "description": "Prometheus text exposition: cache hits/misses, hit ratio, Redis memory, etc."
+            "description": "Prometheus text exposition, not JSON."
           },
           "response": []
         }
@@ -57,7 +57,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/products",
-            "description": "Full product list. Cached under Redis key `products:list` when implemented."
+            "description": "Full product list."
           },
           "response": []
         },
@@ -67,7 +67,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/products?category={{category}}",
-            "description": "Category filter. Cached under `products:category:{category}` when implemented. Seed categories: electronics, home, stationery."
+            "description": "Category filter. Seed categories: electronics, home, stationery."
           },
           "response": []
         },
@@ -77,7 +77,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/products/{{productId}}",
-            "description": "Product detail. Read-through cache key `product:{id}`."
+            "description": "Product detail."
           },
           "response": []
         },
@@ -87,7 +87,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/products/99999",
-            "description": "404 for unknown id. Use for negative-cache practice (`product:missing:{id}`)."
+            "description": "404 for unknown id."
           },
           "response": []
         },
@@ -111,7 +111,7 @@
               }
             },
             "url": "{{baseUrl}}/products",
-            "description": "Requires `name`, `price`, and `category`. Returns 201 with created product."
+            "description": "Requires name, price, and category. Returns 201."
           },
           "response": []
         },
@@ -135,7 +135,7 @@
               }
             },
             "url": "{{baseUrl}}/products/{{productId}}",
-            "description": "Partial update supported via repository. Should invalidate detail/list/category caches when implemented."
+            "description": "Partial update."
           },
           "response": []
         },
@@ -160,7 +160,7 @@
             "method": "POST",
             "header": [],
             "url": "{{baseUrl}}/admin/cache/warm",
-            "description": "Runs configured cache warm (`CACHE_WARM_PRODUCT_IDS`, `cacheWarmer.js`). 501 until implemented."
+            "description": "Runs configured cache warm. 501 until implemented."
           },
           "response": []
         }
@@ -175,7 +175,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/debug/db-query-count",
-            "description": "Test helper: `{ count }` — DB queries since last reset on this instance."
+            "description": "Returns `{ count }`."
           },
           "response": []
         },
@@ -185,7 +185,7 @@
             "method": "POST",
             "header": [],
             "url": "{{baseUrl}}/debug/db-query-count/reset",
-            "description": "Resets the in-process DB query counter. Returns `{ ok: true }`."
+            "description": "Returns `{ ok: true }`."
           },
           "response": []
         }

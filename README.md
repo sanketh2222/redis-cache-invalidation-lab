@@ -135,7 +135,11 @@ Work through stages in order. Use `npm run evaluate` after each stage.
 
 ## Postman
 
-Import `postman/redis-cache-invalidation-lab.postman_collection.json` into Postman (all API endpoints from the table below).
+Import `postman/redis-cache-invalidation-lab.postman_collection.json`. Collection variable `baseUrl` defaults to `http://localhost:3000`.
+
+Collection variables default to `http://localhost:3000` (`protocol`, `host`, `port`). Start the API with `npm run dev` before sending requests.
+
+`GET /metrics` returns Prometheus text, not JSON.
 
 ## Related docs
 
