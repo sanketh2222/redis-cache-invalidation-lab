@@ -44,3 +44,33 @@ Recommended order to practice the assessment experience.
 2. Mutate a product; detect stale list payloads.
 3. Extend invalidation to related keys.
 
+## 6. Stage 5 — Negative caching
+
+1. Call missing id twice; watch DB counter.
+2. Implement negative cache read/write paths.
+
+## 7. Stage 6 — Stampede
+
+1. Run concurrency stampede test.
+2. Experiment with coalescing / Redis locks; observe DB query count.
+
+## 8. Stage 7 — Race consistency
+
+1. Read `tests/concurrency/race.test.js` to understand hooks (not the fix).
+2. Reproduce stale overwrite in evaluator output.
+3. Add version-aware cache writes or equivalent protection.
+
+## 9. Final verification
+
+```bash
+npm test
+npm run evaluate
+```
+
+Aim for all evaluator checks green without breaking observability of Redis behavior.
+
+## When stuck
+
+- Describe symptoms (HTTP vs Redis vs DB counts).
+- Ask Cursor for hints about patterns, not full patches.
+- After a honest attempt, consult `docs/reference/solution-notes.md` for that stage only.
