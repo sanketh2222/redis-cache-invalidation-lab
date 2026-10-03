@@ -1,10 +1,8 @@
-const { createApp } = require('../../src/app');
 const { closeRedis } = require('../../src/redis/client');
 
 describe('redis failure handling', () => {
-  test('documents expected behavior: API should degrade gracefully when redis is unavailable', () => {
-    // Starter code does not implement graceful degradation — track as future hardening.
-    expect(true).toBe(true);
+  test.skip('graceful degradation when Redis is unavailable (deferred — no src changes this phase)', () => {
+    // Document expected behavior for a future hardening pass.
   });
 
   afterAll(async () => {
