@@ -89,6 +89,11 @@ async function setNegativeCache(id) {
   });
 }
 
+async function deleteNegativeCache(id) {
+  const redis = await getRedis();
+  await redis.del(keys.negativeProduct(id));
+}
+
 /**
  * Invalidation is intentionally incomplete in the starter codebase.
  * Mutations should invalidate detail + dependent list keys — not fully wired yet.
@@ -116,6 +121,15 @@ async function flushProductListCaches() {
   if (toDelete.length > 0) await redis.del(toDelete);
 }
 
+async function invalidateProductLists() {
+  await flushProductListCaches();
+}
+
+async function invalidateCategoryList(category) {
+  const redis = await getRedis();
+  await redis.del(keys.productsCategory(category));
+}
+
 async function flushAllProductCacheKeys() {
   const redis = await getRedis();
   const toDelete = [];
@@ -141,4 +155,7 @@ module.exports = {
   flushAllProductCacheKeys,
   flushProductCategoryListCaches,
   flushProductListCaches,
+  deleteNegativeCache,
+  invalidateProductLists,
+  invalidateCategoryList,
 };
