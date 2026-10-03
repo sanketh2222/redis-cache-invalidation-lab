@@ -144,5 +144,5 @@ Collection variables default to `http://localhost:3000` (`protocol`, `host`, `po
 ## Related docs
 
 - `docs/skillmeet-analysis.md` — what the saved Skillmeet HTML actually states
-- `docs/redis-practice.md` — manual Redis exercises
+- `docs/redis-practice.md` — manual Redis exercises (includes a short **TOCTOU** glossary)
 - `docs/audit-skillmeet-coverage.md` — requirement traceability to this repo

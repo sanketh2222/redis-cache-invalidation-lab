@@ -46,6 +46,14 @@ docker compose exec redis redis-cli
 | `SCAN 0 MATCH products:* COUNT 100` | Iterate keys safely |
 | `INCR metrics:cache_hits` | Counter pattern |
 
+## Glossary
+
+**TOCTOU (time-of-check, time-of-use)** — A race where you **check** some condition at one moment and **act** on it later, while another request can change reality in between.
+
+In this lab, `updateProduct` and `deleteProduct` call `findById` (check that the row exists), then call `update` / `remove` (use). If another client **deletes** that row after the check but before the write, the update can return no row and the handler may respond with **500** instead of **404**. That gap is separate from Stage 7’s stale **cache** write race (`docs/stage7-dual-write-simulation.md`).
+
+Tests: `tests/concurrency/update-toctou.test.js` (sequential DELETE then PUT, and a hook-gated PUT vs DELETE race).
+
 ## Debugging tips during assessment
 
 - Compare **HTTP response** vs **Redis GET** for the same entity id.
