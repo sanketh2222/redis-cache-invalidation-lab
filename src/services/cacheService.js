@@ -57,7 +57,6 @@ async function getCachedList() {
 
 async function setCachedList(products) {
   const redis = await getRedis();
-  // Starter bug: list cache has no TTL (detail keys do).
   await redis.set(keys.productsList(), serialize(products),{ EX: config.productCacheTtlSeconds });
 }
 

@@ -54,6 +54,12 @@ async function listProductsByCategory(category) {
 async function createProduct(payload) {
   const created = await productRepository.create(payload);
   await cacheService.flushProductListCaches();
+  await cacheService.setCachedProduct(created);
+  const cachedProducts = await cacheService.getCachedList();
+  if (cachedProducts && cachedProducts.length > 0) {
+    const newCategoryList = cachedProducts.filter(product => product.category === created.category);
+    await cacheService.setCachedCategoryList(created.category, newCategoryList);
+  }
   return created;
 }
 
