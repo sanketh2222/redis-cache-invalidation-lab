@@ -53,7 +53,7 @@ async function listProductsByCategory(category) {
 
 async function createProduct(payload) {
   const created = await productRepository.create(payload);
-  await cacheService.invalidateProductCaches(created.id, null, created.category);
+  await cacheService.flushProductListCaches();
   return created;
 }
 

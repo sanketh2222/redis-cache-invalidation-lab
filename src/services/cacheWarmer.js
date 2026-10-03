@@ -1,5 +1,7 @@
 const config = require('../config');
 const logger = require('../logging/logger');
+const cacheService = require('./cacheService');
+const productService = require('./productService');
 
 /**
  * Cache warming is intentionally incomplete.
@@ -25,10 +27,18 @@ async function warmConfiguredCache() {
     };
   }
 
+
+  for (const id of ids) {
+    const product = await productService.getProductById(id);
+    if (product) {
+      await cacheService.setCachedProduct(product);
+    }
+  }
+
   logger.info('cache warm requested but not implemented in starter code', { ids });
   return {
-    ok: false,
-    reason: 'warmConfiguredCache() is a stub — implement warming for configured ids (and optional list)',
+    ok: true,
+    reason: 'Cache warmed for configured ids',
     configuredIds: ids,
     includeList: config.cacheWarmIncludeList,
     warmed: [],

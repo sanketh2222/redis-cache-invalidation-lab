@@ -99,6 +99,24 @@ async function invalidateProductCaches(_productId, _oldCategory, _newCategory) {
   await flushAllProductCacheKeys(); // TODO(by sanketh thoughts): only flush keys that are affected by the mutation
 }
 
+async function flushProductCategoryListCaches(category) {
+  const redis = await getRedis();
+  const toDelete = [];
+  for await (const key of redis.scanIterator({ MATCH: keys.productsCategory(category), COUNT: 100 })) {
+    toDelete.push(key);
+  }
+  if (toDelete.length > 0) await redis.del(toDelete); // TODO: change to delete only the key for the category
+}
+
+async function flushProductListCaches() {
+  const redis = await getRedis();
+  const toDelete = [];
+  for await (const key of redis.scanIterator({ MATCH: keys.productsList(), COUNT: 100 })) {
+    toDelete.push(key);
+  }
+  if (toDelete.length > 0) await redis.del(toDelete);
+}
+
 async function flushAllProductCacheKeys() {
   const redis = await getRedis();
   const toDelete = [];
@@ -122,4 +140,6 @@ module.exports = {
   setNegativeCache,
   invalidateProductCaches,
   flushAllProductCacheKeys,
+  flushProductCategoryListCaches,
+  flushProductListCaches,
 };
