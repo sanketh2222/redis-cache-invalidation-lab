@@ -25,7 +25,8 @@ async function warmConfiguredCache() {
 
   const warmed = [];
   for (const id of ids) {
-    const product = await productService.getProductById(id);
+    const product = await productService.getProductById(id); // adds the product into the cache by default in case of a miss
+    //TODO: if we want to enusre latest product gets added , then we need to do a force add into redis cache directly using cacheService.setProductById(id, product);
     if (product) warmed.push(id);
   }
 
