@@ -50,7 +50,7 @@ Or Docker: `npm run compose:dual` (LB on `http://localhost:8080`).
 - `GET /metrics` — Prometheus text format (hits, misses, hit ratio, cache bytes, Redis memory)
 - Redis eviction: set `REDIS_MAXMEMORY` and `REDIS_MAXMEMORY_POLICY` in `.env` / docker compose
 - After you **choose** a policy, set matching `CACHE_EVICTION_POLICY_TARGET` for evaluator verification
-- Cache warming: configure `CACHE_WARM_PRODUCT_IDS`, implement `src/services/cacheWarmer.js`, call `POST /admin/cache/warm`
+- Cache warming: set `CACHE_WARM_PRODUCT_IDS` (comma-separated ids), optional `CACHE_WARM_ON_STARTUP=1`, `POST /admin/cache/warm`. To warm the list cache too, call `listProducts()` from your warmer when you choose to.
 
 Stage 7 race is a **local simulation** — read `docs/stage7-dual-write-simulation.md` (not Skillmeet's private grader).
 

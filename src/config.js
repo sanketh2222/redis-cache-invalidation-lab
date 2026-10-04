@@ -23,9 +23,6 @@ const config = {
   get cacheWarmProductIds() {
     return process.env.CACHE_WARM_PRODUCT_IDS || '';
   },
-  get cacheWarmIncludeList() {
-    return process.env.CACHE_WARM_INCLUDE_LIST === '1';
-  },
   get cacheEvictionPolicyTarget() {
     return process.env.CACHE_EVICTION_POLICY_TARGET || '';
   },

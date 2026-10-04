@@ -55,11 +55,13 @@ async function createProduct(payload) {
   const created = await productRepository.create(payload);
 
   try {
-    await cacheService.setCachedProduct(created);
+    
     await cacheService.deleteNegativeCache(created.id);
 
     await cacheService.invalidateProductLists();
     await cacheService.invalidateCategoryList(created.category);
+    
+    await cacheService.setCachedProduct(created);
 
   } catch (error) {
     logger.error({

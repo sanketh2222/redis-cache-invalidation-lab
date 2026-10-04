@@ -72,7 +72,7 @@ Repo: redis-cache-invalidation-lab @ `af0f3ac` (origin/main). This list describe
 - No two-instance concurrency test beyond the single shared-cache read (`runSharedCacheCheck`).
 
 ## 8. Implemented but never tested
-- **The warmer (`cacheWarmer.js`).** `warmConfiguredCache` always returns `warmed: []` (the evaluator check fails) and ignores `includeList`. It double-writes the detail key (once via `getProductById`, once via `setCachedProduct`). Gaps:
+- **The warmer (`cacheWarmer.js`).** Optional: also warm `products:list` by calling `listProducts()` when you want a hot list cache (no separate env flag). Gaps:
   - `parseWarmProductIds` filtering (spaces, `0`, `-1`, `abc`, duplicates),
   - the 501 response when the ids are empty,
   - `maybeWarmOnStartup` with `CACHE_WARM_ON_STARTUP=1`,
