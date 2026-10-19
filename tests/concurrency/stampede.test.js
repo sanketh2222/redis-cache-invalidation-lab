@@ -33,7 +33,7 @@ describe('cache stampede', () => {
     expect(count).toBeLessThanOrEqual(3);
   });
 
-  test.failing(
+  test(
     'hook-gated parallel GET for existing product coalesces to one DB read',
     async () => {
       const productId = 3;
@@ -63,7 +63,7 @@ describe('cache stampede', () => {
     }
   );
 
-  test.failing(
+  test(
     'parallel GET for missing id coalesces to one DB read and one negative key',
     async () => {
       const missingId = 77777;

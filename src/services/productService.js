@@ -1,5 +1,6 @@
 const productRepository = require('../repositories/productRepository');
 const cacheService = require('./cacheService');
+const { getWithSingleFlight } = require('./singleFlight');
 const logger = require('../logging/logger');
 
 async function getProductById(id) {
@@ -10,27 +11,7 @@ async function getProductById(id) {
     throw err;
   }
 
-  const cached = await cacheService.getCachedProduct(numericId);
-  if (cached.hit && cached.product) {
-    logger.debug('cache hit for product', { id: numericId });
-    return cached.product;
-  }
-
-  const result = await cacheService.getNegativeCache(numericId);
-  if (result) {
-    logger.debug('negative cache hit for product', { id: numericId });
-    return null;
-  }
-
-  const fromDb = await productRepository.findById(numericId);
-  if (!fromDb) {
-    logger.debug('negative cache for product', { id: numericId });
-    await cacheService.setNegativeCache(numericId);
-    return null;
-  }
-
-  await cacheService.setCachedProduct(fromDb);
-  return fromDb;
+  return getWithSingleFlight(numericId);
 }
 
 async function listProducts() {
