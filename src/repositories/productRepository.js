@@ -1,6 +1,7 @@
 const pool = require('../db/pool');
 const { incrementDbQueryCount } = require('../testing/dbMetrics');
 const { runHook } = require('../testing/cacheHooks');
+const { getRequestTestContext } = require('../testing/requestTestContext');
 
 function mapRow(row) {
   if (!row) return null;
@@ -23,7 +24,13 @@ async function findById(id) {
      FROM products WHERE id = $1`,
     [id]
   );
-  await runHook('afterDbRead', { id, op: 'findById', row: rows[0] || null });
+  const testCtx = getRequestTestContext();
+  await runHook('afterDbRead', {
+    id,
+    op: 'findById',
+    row: rows[0] || null,
+    holdAfterDbRead: Boolean(testCtx?.holdAfterDbRead),
+  });
   return mapRow(rows[0]);
 }
 

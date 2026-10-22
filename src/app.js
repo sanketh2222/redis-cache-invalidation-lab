@@ -5,10 +5,18 @@ const { getDbQueryCount, resetDbQueryCount } = require('./testing/dbMetrics');
 const { getRedis } = require('./redis/client');
 const { renderMetrics } = require('./metrics/prometheus');
 const logger = require('./logging/logger');
+const { hooksEnabled } = require('./testing/cacheHooks');
+const { runWithRequestTestContext } = require('./testing/requestTestContext');
 
 function createApp() {
   const app = express();
   app.use(express.json());
+
+  app.use((req, res, next) => {
+    if (!hooksEnabled()) return next();
+    const holdAfterDbRead = req.get('x-test-hold-after-db-read') === '1';
+    return runWithRequestTestContext({ holdAfterDbRead }, () => next());
+  });
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true, instance: process.env.INSTANCE_ID || 'api-local' });

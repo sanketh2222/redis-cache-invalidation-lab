@@ -23,6 +23,40 @@ function deserialize(raw) {
   }
 }
 
+function productVersion(product) {
+  const n = Number(product?.version);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/**
+ * Atomically SET product JSON only if incoming version is not older than cached.
+ * Returns 1 when written, 0 when rejected (stale).
+ */
+const SET_PRODUCT_IF_NOT_STALE_SCRIPT = `
+local key = KEYS[1]
+local payload = ARGV[1]
+local incoming = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+
+if incoming == nil or incoming < 1 then
+  incoming = 1
+end
+
+local raw = redis.call('GET', key)
+if raw then
+  local cached = tonumber(string.match(raw, '"version"%s*:%s*(%d+)'))
+  if cached == nil then
+    cached = 1
+  end
+  if incoming < cached then
+    return 0
+  end
+end
+
+redis.call('SET', key, payload, 'EX', ttl)
+return 1
+`;
+
 async function getCachedProduct(id) {
   const redis = await getRedis();
   const raw = await redis.get(keys.product(id));
@@ -37,11 +71,29 @@ async function getCachedProduct(id) {
 async function setCachedProduct(product) {
   const redis = await getRedis();
   await runHook('beforeCacheSet', { product });
-  // NOTE: intentionally naive — no version check on write (race vulnerability).
-  await redis.set(keys.product(product.id), serialize(product), {
-    EX: config.productCacheTtlSeconds,
+
+  const key = keys.product(product.id);
+  const incomingVersion = productVersion(product);
+  const toStore = { ...product, version: incomingVersion };
+
+  const written = await redis.eval(SET_PRODUCT_IF_NOT_STALE_SCRIPT, {
+    keys: [key],
+    arguments: [
+      serialize(toStore),
+      String(incomingVersion),
+      String(config.productCacheTtlSeconds),
+    ],
   });
-  await runHook('afterCacheSet', { product });
+
+  if (Number(written) === 0) {
+    logger.debug(
+      { productId: product.id, incomingVersion },
+      'skipped stale cache write (atomic)'
+    );
+    return;
+  }
+
+  await runHook('afterCacheSet', { product: toStore });
 }
 
 async function getCachedList() {
