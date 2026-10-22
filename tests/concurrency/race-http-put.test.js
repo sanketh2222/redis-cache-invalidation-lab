@@ -24,7 +24,7 @@ describe('HTTP PUT stale cache write race', () => {
     await cacheService.flushAllProductCacheKeys();
   });
 
-  test.failing(
+  test(
     'slow GET must not repopulate stale product after HTTP PUT invalidates cache',
     async () => {
       const productId = 1;
@@ -35,13 +35,16 @@ describe('HTTP PUT stale cache write race', () => {
       });
 
       hooks.afterDbRead = async (ctx) => {
+        if (!ctx.holdAfterDbRead) return;
         if (ctx.op === 'findById' && ctx.id === productId) {
           await gate;
         }
       };
 
       try {
-        const slowGet = fetch(`${baseUrl}/products/${productId}`);
+        const slowGet = fetch(`${baseUrl}/products/${productId}`, {
+          headers: { 'X-Test-Hold-After-Db-Read': '1' },
+        });
         await new Promise((r) => setTimeout(r, 50));
 
         const putRes = await fetch(`${baseUrl}/products/${productId}`, {
@@ -52,7 +55,7 @@ describe('HTTP PUT stale cache write race', () => {
         expect(putRes.status).toBe(200);
         const updated = await putRes.json();
 
-        release();
+        release(); // Release the gate to allow the slow GET to continue
         await slowGet;
 
         const redis = await getRedis();
