@@ -31,3 +31,13 @@ Scope: `src/services/singleFlight.js`, `getWithSingleFlight` and `getProductById
 
 ## Suggested direction
 Build a small generic module, `singleFlight(key, loader)`, that owns only the lock, the wait loop and safe release. Keep the product policy (cache keys, not-found caching, what to do on timeout) in `productService`, which passes in a loader that calls `findById`.
+
+
+## Singleflight known limitations (24 Oct 2026)
+
+Context: gap 2 test now asserts leader read + exactly one waiter takeover (2 findById) after lock TTL expiry. No new code; behaviour comes from lockGone exit + SET NX in tryLeadLoad.
+
+1. **No lock renewal.** The leader has no heartbeat/lease extension, so a leader that is merely slow (not dead) is duplicated once its TTL (30s) passes.
+2. **Old leader is not fenced.** When the slow leader wakes, it still writes its row to cache. If a PUT landed in between, that row can be stale; only the version compare-and-set on setCachedProduct limits the damage. (Its lock release is token compare-and-delete, so it cannot delete the new owner's lock.)
+3. **Takeover is one level deep, not recursive.** If the second leader is also slow, the remaining waiters (7 in the test) time out after maxWaitMs (25s) and fall back to the DB individually.
+4. **Mitigation in use:** existing polling with backoff + lockGone + SET NX takeover. Possible future layer: Redis pub/sub to notify waiters on cache fill/leader failure instead of polling.

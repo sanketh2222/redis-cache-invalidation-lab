@@ -7,7 +7,6 @@
 const cacheService = require('../../src/services/cacheService');
 const productService = require('../../src/services/productService');
 const productRepository = require('../../src/repositories/productRepository');
-const { acquireLock } = require('../../src/services/singleFlight');
 const keys = require('../../src/redis/keys');
 const { getRedis } = require('../../src/redis/client');
 const { hooks, resetHooks } = require('../../src/testing/cacheHooks');
@@ -15,6 +14,55 @@ const { hooks, resetHooks } = require('../../src/testing/cacheHooks');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const TIMEOUT = Symbol('timeout');
 const withDeadline = (p, ms) => Promise.race([p.catch((e) => e), sleep(ms).then(() => TIMEOUT)]);
+
+/** Same convention as singleFlight.lockKey (not exported). */
+function productLockKey(id) {
+  return `lock:product:${id}`;
+}
+
+/**
+ * Pause the first findById for id inside afterDbRead.
+ * onEntered runs once, before the pause, so TTL changes stay visible at the call site.
+ */
+function gateFirstFindById(id, onEntered) {
+  let releaseGate;
+  const gate = new Promise((resolve) => {
+    releaseGate = resolve;
+  });
+  let markEntered;
+  const entered = new Promise((resolve) => {
+    markEntered = resolve;
+  });
+  let gated = false;
+
+  hooks.afterDbRead = async (ctx) => {
+    if (ctx.op !== 'findById' || Number(ctx.id) !== Number(id) || gated) return;
+    gated = true;
+    if (onEntered) await onEntered();
+    markEntered();
+    await gate;
+  };
+
+  return {
+    entered,
+    release: () => releaseGate(),
+  };
+}
+
+async function expireProductLockSoon(id, ttlMs) {
+  const redis = await getRedis();
+  await redis.pExpire(productLockKey(id), ttlMs);
+}
+
+async function waitUntilProductLockAbsent(id, timeoutMs) {
+  const redis = await getRedis();
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((await redis.exists(productLockKey(id))) === 0) return;
+    await sleep(20);
+  }
+  throw new Error(`lock ${productLockKey(id)} did not expire within ${timeoutMs}ms`);
+}
 
 describe('single-flight gaps (review-5e6ade2.md)', () => {
   beforeEach(async () => {
@@ -60,19 +108,42 @@ describe('single-flight gaps (review-5e6ade2.md)', () => {
     });
   }, 10000);
 
-  // Desired: a leader whose lock TTL expired mid-load must be fenced / its lock extended,
-  // so a second request does NOT become a new leader and hit the DB.
-  test('gap 2 - lock expiry: second request must not start a new DB load after TTL lapses', async () => {
+  // Desired: lock TTL expires while the leader is still loading. Exactly one waiter
+  // takes over and reads the DB (leader read + one takeover = 2 findById calls).
+  test('gap 2 - lock expiry: after TTL expires while leader loads, exactly one waiter takes over and reads the DB', async () => {
     const id = 3;
-    // Simulate a slow leader that took the lock with a short TTL and is still loading.
-    const token = await acquireLock(id, 150);
-    expect(token).toBeTruthy();
-    await sleep(250); // lock expired, original leader still "working"
+    const waiterCount = 8;
+    const lockTtlMs = 150;
 
-    const spy = jest.spyOn(productRepository, 'findById');
-    await withDeadline(productService.getProductById(id), 3000);
-    expect(spy).toHaveBeenCalledTimes(0);
-  }, 10000);
+    // Phase: leader gated. First findById pauses; TTL is shortened only via expireProductLockSoon.
+    const leaderGate = gateFirstFindById(id, () => expireProductLockSoon(id, lockTtlMs));
+    const findByIdSpy = jest.spyOn(productRepository, 'findById');
+
+    try {
+      const leader = productService.getProductById(id);
+      await leaderGate.entered; // leader is paused here after the first findById call db read
+
+      // Phase: TTL lapses. Poll until the lock key is gone (leader still inside the gate).
+      await waitUntilProductLockAbsent(id, lockTtlMs + 1000);
+
+      // Phase: waiters fire while the leader has not written the cache yet.
+      const waiters = Array.from({ length: waiterCount }, () => productService.getProductById(id));
+      // No signal that waiters have observed the missing lock. Releasing immediately lets them
+      // read the cache the leader is about to fill, so the single takeover read never happens.
+      await sleep(50);
+
+      // Phase: release leader, then assert leader + one takeover (2 findById) and every caller gets the row.
+      leaderGate.release();
+      const results = await Promise.all([leader, ...waiters]);
+
+      for (const row of results) {
+        expect(row).toEqual(expect.objectContaining({ id }));
+      }
+      expect(findByIdSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      leaderGate.release();
+    }
+  }, 15000);
 
   // Desired: when Redis is unavailable, getProductById fails open and reads from the DB.
   test('gap 3 - Redis down: getProductById falls back to DB instead of throwing', async () => {
