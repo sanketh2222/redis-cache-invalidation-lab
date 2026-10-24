@@ -5,7 +5,6 @@
  * No production code was changed to write these.
  */
 const cacheService = require('../../src/services/cacheService');
-const CacheUnavailableError = require('../../src/errors/CacheUnavailableError');
 const productService = require('../../src/services/productService');
 const productRepository = require('../../src/repositories/productRepository');
 const keys = require('../../src/redis/keys');
@@ -149,7 +148,7 @@ describe('single-flight gaps (review-5e6ade2.md)', () => {
   // Desired: when Redis is unavailable, getProductById fails open and reads from the DB.
   test('gap 3 - Redis down: getProductById falls back to DB instead of throwing', async () => {
     const id = 1;
-    const down = () => Promise.reject(new CacheUnavailableError('ECONNREFUSED redis'));
+    const down = () => Promise.reject(new Error('ECONNREFUSED redis'));
     jest.spyOn(cacheService, 'getCachedProduct').mockImplementation(down);
     jest.spyOn(cacheService, 'getNegativeCache').mockImplementation(down);
     jest.spyOn(cacheService, 'setCachedProduct').mockImplementation(down);
