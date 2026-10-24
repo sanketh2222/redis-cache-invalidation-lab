@@ -2,6 +2,7 @@ const productRepository = require('../repositories/productRepository');
 const cacheService = require('./cacheService');
 const { getWithSingleFlight } = require('./singleFlight');
 const logger = require('../logging/logger');
+const CacheUnavailableError = require('../errors/CacheUnavailableError');
 
 async function getProductById(id) {
   const numericId = Number(id);
@@ -11,7 +12,19 @@ async function getProductById(id) {
     throw err;
   }
 
-  return getWithSingleFlight(numericId);
+  try {
+    return await getWithSingleFlight(numericId);
+  } catch (error) {
+    if (error instanceof CacheUnavailableError) {
+      logger.warn('Cache unavailable in getProductById; falling back to DB', {
+        err: error,
+        productId: numericId,
+      });
+      return productRepository.findById(numericId);
+    }
+    logger.error('getProductById failed', { err: error, productId: numericId });
+    throw error;
+  }
 }
 
 async function listProducts() {
@@ -45,11 +58,11 @@ async function createProduct(payload) {
     await cacheService.setCachedProduct(created);
 
   } catch (error) {
-    logger.error({
+    logger.warn('Cache invalidation failed after product creation', {
       err: error,
       productId: created.id,
-      category: created.category
-    }, 'Cache invalidation failed after product creation');
+      category: created.category,
+    });
   }
 
   return created;

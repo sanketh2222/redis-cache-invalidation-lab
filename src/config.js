@@ -14,6 +14,8 @@ const config = {
   get redisUrl() {
     return process.env.REDIS_URL || 'redis://localhost:6380';
   },
+  redisConnectTimeoutMs: Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 5000),
+  redisCommandTimeoutMs: Number(process.env.REDIS_COMMAND_TIMEOUT_MS || 5000),
   productCacheTtlSeconds: Number(process.env.PRODUCT_CACHE_TTL_SECONDS || 60),
   negativeCacheTtlSeconds: Number(process.env.NEGATIVE_CACHE_TTL_SECONDS || 30),
   logLevel: process.env.LOG_LEVEL || 'info',
