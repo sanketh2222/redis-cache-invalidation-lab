@@ -1,6 +1,10 @@
 const productRepository = require('../repositories/productRepository');
 const cacheService = require('./cacheService');
-const { getWithSingleFlight } = require('./singleFlight');
+const {
+  getWithSingleFlight,
+  getListWithSingleFlight,
+  getCategoryListWithSingleFlight,
+} = require('./singleFlight');
 const logger = require('../logging/logger');
 const CacheUnavailableError = require('../errors/CacheUnavailableError');
 
@@ -28,21 +32,32 @@ async function getProductById(id) {
 }
 
 async function listProducts() {
-  const cached = await cacheService.getCachedList();
-  if (cached) return cached;
-
-  const products = await productRepository.findAll();
-  await cacheService.setCachedList(products);
-  return products;
+  try {
+    return await getListWithSingleFlight();
+  } catch (error) {
+    if (error instanceof CacheUnavailableError) {
+      logger.warn('Cache unavailable in listProducts; falling back to DB', { err: error });
+      return productRepository.findAll();
+    }
+    logger.error('listProducts failed', { err: error });
+    throw error;
+  }
 }
 
 async function listProductsByCategory(category) {
-  const cached = await cacheService.getCachedCategoryList(category);
-  if (cached) return cached;
-
-  const products = await productRepository.findByCategory(category);
-  await cacheService.setCachedCategoryList(category, products);
-  return products;
+  try {
+    return await getCategoryListWithSingleFlight(category);
+  } catch (error) {
+    if (error instanceof CacheUnavailableError) {
+      logger.warn('Cache unavailable in listProductsByCategory; falling back to DB', {
+        err: error,
+        category,
+      });
+      return productRepository.findByCategory(category);
+    }
+    logger.error('listProductsByCategory failed', { err: error, category });
+    throw error;
+  }
 }
 
 async function createProduct(payload) {
