@@ -19,7 +19,7 @@ describe('create cache failure handling', () => {
   });
 
   test('returns 201 and logs when cache invalidation fails after DB commit', async () => {
-    const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
     jest
       .spyOn(cacheService, 'invalidateProductLists')
       .mockRejectedValueOnce(new Error('simulated redis failure'));
@@ -43,9 +43,9 @@ describe('create cache failure handling', () => {
     const { rows } = await pool.query('SELECT id FROM products WHERE name = $1', [name]);
     expect(rows.length).toBe(1);
 
-    expect(errorSpy).toHaveBeenCalledWith(
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Cache invalidation failed after product creation',
       expect.objectContaining({ productId: body.id }),
-      'Cache invalidation failed after product creation'
     );
   });
 });
