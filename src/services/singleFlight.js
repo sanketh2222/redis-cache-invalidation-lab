@@ -10,17 +10,19 @@
  *
  * In-process promise coalescing (per-id Map) is not implemented yet (see gap 5 tests).
  */
+const crypto = require('crypto');
 const { getRedis } = require('../redis/client');
 const keys = require('../redis/keys');
-const { lockKey, acquireLock, releaseLock, LOCK_TTL_MS } = require('../redis/productLock');
 const cacheService = require('./cacheService');
 const productRepository = require('../repositories/productRepository');
 const logger = require('../logging/logger');
-const CacheUnavailableError = require('../errors/CacheUnavailableError');
 const {
   incrementCacheHit,
   incrementCacheMiss,
 } = require('../metrics/prometheus');
+
+/** Half of typical 60s gateway timeout; safety ceiling, not expected DB duration. */
+const LOCK_TTL_MS = 30_000;
 
 /** Max full waitForCache cycles after the initial tryLeadLoad loses (not per-poll ticks). */
 const MAX_WAIT_ATTEMPTS = 2;
@@ -30,6 +32,22 @@ const DEFAULT_WAIT_OPTS = {
   maxDelayMs: 500,
   maxWaitMs: 25_000,
 };
+
+/**
+ * Plain GET then DEL is unsafe: the lock can expire and another holder can acquire
+ * between GET and DEL, so DEL would remove the new owner's lock.
+ */
+const RELEASE_LOCK_SCRIPT = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+else
+  return 0
+end
+`;
+
+function lockKey(id) {
+  return `lock:product:${id}`;
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -89,6 +107,23 @@ async function pollState(id) {
   return { status: 'miss', product: null, lockPresent: Boolean(lockExists) };
 }
 
+async function acquireLock(id, ttlMs = LOCK_TTL_MS) {
+  const redis = await getRedis();
+  const token = crypto.randomUUID();
+  const key = lockKey(id);
+  const ok = await redis.set(key, token, { NX: true, PX: ttlMs });
+  return ok ? token : null;
+}
+
+async function releaseLock(id, token) {
+  if (!token) return;
+  const redis = await getRedis();
+  await redis.eval(RELEASE_LOCK_SCRIPT, {
+    keys: [lockKey(id)],
+    arguments: [token],
+  });
+}
+
 async function waitForCache(id, opts = {}) {
   const { baseDelayMs, maxDelayMs, maxWaitMs } = { ...DEFAULT_WAIT_OPTS, ...opts };
   const deadline = Date.now() + maxWaitMs;
@@ -122,26 +157,10 @@ async function loadAndCache(id) {
   const fromDb = await productRepository.findById(id);
   if (!fromDb) {
     logger.debug('negative cache for product', { id });
-    try {
-      await cacheService.setNegativeCache(id);
-    } catch (err) {
-      if (err instanceof CacheUnavailableError) {
-        logger.warn('negative cache write failed; returning not found', { err, id });
-        return null;
-      }
-      throw err;
-    }
+    await cacheService.setNegativeCache(id);
     return null;
   }
-  try {
-    await cacheService.setCachedProduct(fromDb);
-  } catch (err) {
-    if (err instanceof CacheUnavailableError) {
-      logger.warn('product cache write failed; returning DB row', { err, id });
-      return fromDb;
-    }
-    throw err;
-  }
+  await cacheService.setCachedProduct(fromDb);
   return fromDb;
 }
 
@@ -166,7 +185,7 @@ async function tryLeadLoad(id) {
       const product = await loadAndCache(id);
       return { led: true, product };
     } catch (err) {
-      logger.error('single-flight loader failed', { err, id });
+      logger.error({ err, id }, 'single-flight loader failed');
       throw err;
     }
   } finally {

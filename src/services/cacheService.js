@@ -86,10 +86,10 @@ async function setCachedProduct(product) {
   });
 
   if (Number(written) === 0) {
-    logger.debug('skipped stale cache write (atomic)', {
-      productId: product.id,
-      incomingVersion,
-    });
+    logger.debug(
+      { productId: product.id, incomingVersion },
+      'skipped stale cache write (atomic)'
+    );
     return;
   }
 
