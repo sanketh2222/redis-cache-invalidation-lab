@@ -1,19 +1,31 @@
 /**
- * Stampede protection via a Redis distributed lock.
+ * Stampede protection for GET-by-id via a Redis distributed lock.
  *
- * In-process coalescing (a Map of id -> Promise) dedupes concurrent misses in one
- * Node process only. Multiple API instances on separate hosts share Redis but not
- * memory, so SET NX + token + Lua release is the minimal cross-host mutex: one
- * leader fills the cache while waiters poll with backoff.
+ * Cross-host: SET NX on lock:product:<id> with a random token and PX TTL; release uses
+ * Lua compare-and-delete so a stale holder cannot delete a new owner's lock.
+ * One leader rechecks the cache under the lock, loads from DB, and writes product or
+ * negative cache. Losers poll product + negative keys with exponential backoff; they
+ * exit early when the lock key is absent (lockGone), then may tryLeadLoad with at most
+ * MAX_WAIT_ATTEMPTS full wait cycles before finishAfterTimedOut (try lock, else DB).
+ *
+ * In-process promise coalescing (per-id Map) is not implemented yet (see gap 5 tests).
  */
 const crypto = require('crypto');
 const { getRedis } = require('../redis/client');
+const keys = require('../redis/keys');
 const cacheService = require('./cacheService');
 const productRepository = require('../repositories/productRepository');
 const logger = require('../logging/logger');
+const {
+  incrementCacheHit,
+  incrementCacheMiss,
+} = require('../metrics/prometheus');
 
 /** Half of typical 60s gateway timeout; safety ceiling, not expected DB duration. */
 const LOCK_TTL_MS = 30_000;
+
+/** Max full waitForCache cycles after the initial tryLeadLoad loses (not per-poll ticks). */
+const MAX_WAIT_ATTEMPTS = 2;
 
 const DEFAULT_WAIT_OPTS = {
   baseDelayMs: 25,
@@ -45,6 +57,15 @@ function jitterMs(maxJitter) {
   return Math.floor(Math.random() * maxJitter);
 }
 
+function deserializeProduct(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 async function tryReadCache(id) {
   const cached = await cacheService.getCachedProduct(id);
   if (cached.hit && cached.product) {
@@ -54,6 +75,36 @@ async function tryReadCache(id) {
     return { status: 'negative', product: null };
   }
   return { status: 'miss' };
+}
+
+/**
+ * Waiter poll only: one Redis round trip. Hit/miss counters mirror getCachedProduct
+ * (one miss per poll when the product key is absent; negative key does not add another).
+ */
+async function pollState(id) {
+  const redis = await getRedis();
+  const [productRaw, negativeRaw, lockExists] = await redis
+    .multi()
+    .get(keys.product(id))
+    .get(keys.negativeProduct(id))
+    .exists(lockKey(id))
+    .exec();
+
+  if (productRaw) {
+    incrementCacheHit();
+    const product = deserializeProduct(productRaw);
+    if (product) {
+      return { status: 'hit', product, lockPresent: Boolean(lockExists) };
+    }
+  } else {
+    incrementCacheMiss();
+  }
+
+  if (negativeRaw === '1') {
+    return { status: 'negative', product: null, lockPresent: Boolean(lockExists) };
+  }
+
+  return { status: 'miss', product: null, lockPresent: Boolean(lockExists) };
 }
 
 async function acquireLock(id, ttlMs = LOCK_TTL_MS) {
@@ -79,12 +130,16 @@ async function waitForCache(id, opts = {}) {
   let delay = baseDelayMs;
 
   while (Date.now() < deadline) {
-    const read = await tryReadCache(id);
-    if (read.status === 'hit') {
-      return { outcome: 'ready', product: read.product };
+    const state = await pollState(id);
+    if (state.status === 'hit') {
+      return { outcome: 'ready', product: state.product };
     }
-    if (read.status === 'negative') {
+    if (state.status === 'negative') {
       return { outcome: 'ready', product: null };
+    }
+
+    if (!state.lockPresent) {
+      return { outcome: 'lockGone' };
     }
 
     const remaining = deadline - Date.now();
@@ -109,6 +164,44 @@ async function loadAndCache(id) {
   return fromDb;
 }
 
+async function tryLeadLoad(id) {
+  const token = await acquireLock(id);
+  if (!token) {
+    return { led: false };
+  }
+
+  try {
+    const again = await tryReadCache(id);
+    if (again.status === 'hit') {
+      logger.debug('cache hit for product', { id });
+      return { led: true, product: again.product };
+    }
+    if (again.status === 'negative') {
+      logger.debug('negative cache hit for product', { id });
+      return { led: true, product: null };
+    }
+
+    try {
+      const product = await loadAndCache(id);
+      return { led: true, product };
+    } catch (err) {
+      logger.error({ err, id }, 'single-flight loader failed');
+      throw err;
+    }
+  } finally {
+    await releaseLock(id, token);
+  }
+}
+
+async function finishAfterTimedOut(id) {
+  const led = await tryLeadLoad(id);
+  if (led.led) {
+    return led.product;
+  }
+  logger.warn('single-flight wait timed out; falling back to DB', { id });
+  return loadAndCache(id);
+}
+
 async function getWithSingleFlight(id) {
   const read = await tryReadCache(id);
   if (read.status === 'hit') {
@@ -120,37 +213,27 @@ async function getWithSingleFlight(id) {
     return null;
   }
 
-  const token = await acquireLock(id);
-  if (token) {
-    try {
-      const again = await tryReadCache(id);
-      if (again.status === 'hit') {
-        logger.debug('cache hit for product', { id });
-        return again.product;
-      }
-      if (again.status === 'negative') {
-        logger.debug('negative cache hit for product', { id });
-        return null;
-      }
+  const initialLead = await tryLeadLoad(id);
+  if (initialLead.led) {
+    return initialLead.product;
+  }
 
-      try {
-        return await loadAndCache(id);
-      } catch (err) {
-        logger.error({ err, id }, 'single-flight loader failed');
-        throw err;
-      }
-    } finally {
-      await releaseLock(id, token);
+  for (let attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++) {
+    const waited = await waitForCache(id);
+    if (waited.outcome === 'ready') {
+      return waited.product;
+    }
+    if (waited.outcome === 'timedOut') {
+      break;
+    }
+
+    const led = await tryLeadLoad(id);
+    if (led.led) {
+      return led.product;
     }
   }
 
-  const waited = await waitForCache(id);
-  if (waited.outcome === 'ready') {
-    return waited.product;
-  }
-
-  logger.debug('single-flight wait timed out; falling back to DB', { id });
-  return loadAndCache(id);
+  return finishAfterTimedOut(id);
 }
 
 module.exports = {
