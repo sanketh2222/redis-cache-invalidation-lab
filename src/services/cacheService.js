@@ -195,6 +195,7 @@ async function flushAllProductCacheKeys() {
 }
 
 module.exports = {
+  deserialize,
   getCachedProduct,
   setCachedProduct,
   getCachedList,
