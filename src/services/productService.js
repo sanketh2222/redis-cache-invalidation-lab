@@ -89,7 +89,7 @@ async function updateProduct(id, payload) {
 
   const updated = await productRepository.update(Number(id), payload);
   await cacheService.invalidateProductCaches(updated.id, existing.category, updated.category);
-  await cacheService.deleteCachedProduct(id);
+  await cacheService.setCachedProduct(updated);
   return updated;
 }
 
