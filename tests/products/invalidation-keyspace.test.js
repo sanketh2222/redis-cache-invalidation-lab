@@ -40,19 +40,27 @@ describe('invalidation redis keyspace', () => {
     expect(await redis.exists(keys.productsCategory('electronics'))).toBe(0);
   });
 
-  test('PUT flush removes detail and list keys until repopulated', async () => {
-    await fetch(`${baseUrl}/products/1`);
+  test('PUT write-through warms detail and clears list keys', async () => {
+    const warm = await (await fetch(`${baseUrl}/products/1`)).json();
     await fetch(`${baseUrl}/products`);
 
-    await fetch(`${baseUrl}/products/1`, {
+    const putRes = await fetch(`${baseUrl}/products/1`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ price: 99 }),
     });
+    const updated = await putRes.json();
 
     const redis = await getRedis();
-    expect(await redis.exists(keys.product(1))).toBe(0);
+    expect(await redis.exists(keys.product(1))).toBe(1);
     expect(await redis.exists(keys.productsList())).toBe(0);
+
+    const raw = await redis.get(keys.product(1));
+    const cached = raw ? JSON.parse(raw) : null;
+    expect(cached).not.toBeNull();
+    expect(cached.price).toBe(99);
+    expect(cached.version).toBe(updated.version);
+    expect(cached.version).toBeGreaterThan(warm.version);
 
     await fetch(`${baseUrl}/products/1`);
     expect(await redis.exists(keys.product(1))).toBe(1);

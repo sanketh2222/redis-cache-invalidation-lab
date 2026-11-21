@@ -24,7 +24,7 @@ async function getProductById(id) {
         err: error,
         productId: numericId,
       });
-      return productRepository.findById(numericId);
+      return await productRepository.findById(numericId);
     }
     logger.error('getProductById failed', { err: error, productId: numericId });
     throw error;

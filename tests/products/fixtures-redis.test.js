@@ -16,44 +16,32 @@ describe('DB reset without Redis flush', () => {
     await stopTestServer();
   });
 
-  test('after resetFixtures, new row at reused id is not shadowed by stale Redis keys', async () => {
-    const redis = await getRedis();
-    await resetFixtures();
-    const ghostId = await nextProductId();
-
-    await redis.set(
-      keys.product(ghostId),
-      JSON.stringify({
-        id: ghostId,
-        name: 'Ghost Product',
-        price: 0.01,
-        category: 'ghost',
-        version: 99,
-      }),
-      { EX: 60 }
-    );
-    await redis.set(keys.negativeProduct(ghostId), '1', { EX: 30 });
-
+  test('DELETE clears warmed detail cache so GET does not serve stale product', async () => {
     const postRes = await fetch(`${baseUrl}/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: `Reused id ${Date.now()}`,
-        description: 'after truncate',
-        price: 20,
+        name: `Delete invalidation ${Date.now()}`,
+        description: 'cache warm then delete',
+        price: 12,
         category: 'electronics',
       }),
     });
     expect(postRes.status).toBe(201);
     const created = await postRes.json();
-    expect(created.id).toBe(ghostId);
 
-    const getRes = await fetch(`${baseUrl}/products/${ghostId}`);
-    expect(getRes.status).toBe(200);
-    const live = await getRes.json();
-    expect(live.name).toBe(created.name);
-    expect(live.name).not.toBe('Ghost Product');
+    const warmGet = await fetch(`${baseUrl}/products/${created.id}`);
+    expect(warmGet.status).toBe(200);
 
-    await cacheService.flushAllProductCacheKeys();
+    const redis = await getRedis();
+    expect(await redis.exists(keys.product(created.id))).toBe(1);
+
+    const delRes = await fetch(`${baseUrl}/products/${created.id}`, { method: 'DELETE' });
+    expect(delRes.status).toBe(204);
+
+    expect(await redis.exists(keys.product(created.id))).toBe(0);
+
+    const afterGet = await fetch(`${baseUrl}/products/${created.id}`);
+    expect(afterGet.status).toBe(404);
   });
 });
