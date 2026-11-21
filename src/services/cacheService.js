@@ -96,6 +96,11 @@ async function setCachedProduct(product) {
   await runHook('afterCacheSet', { product: toStore });
 }
 
+async function deleteCachedProduct(id) {
+  const redis = await getRedis();
+  await redis.del(keys.product(id));
+}
+
 async function getCachedList() {
   const redis = await getRedis();
   const raw = await redis.get(keys.productsList());
@@ -198,6 +203,7 @@ module.exports = {
   deserialize,
   getCachedProduct,
   setCachedProduct,
+  deleteCachedProduct,
   getCachedList,
   setCachedList,
   getCachedCategoryList,
